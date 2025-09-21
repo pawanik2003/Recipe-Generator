@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Recipe } from '../types';
 
@@ -7,10 +6,18 @@ interface RecipeCardProps {
 }
 
 const RecipeCard: React.FC<RecipeCardProps> = ({ recipe }) => {
-  const imageUrl = `https://picsum.photos/seed/${recipe.recipeName.replace(/\s/g, '')}/400/300`;
+  const placeholderImageUrl = `https://picsum.photos/seed/${recipe.recipeName.replace(/\s/g, '')}/400/300`;
+
   return (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden transition-transform duration-300 hover:scale-105 hover:shadow-2xl">
-      <img className="w-full h-56 object-cover" src={imageUrl} alt={recipe.imageDescription} />
+      <div className="w-full h-56 bg-gray-200 flex items-center justify-center">
+        <img 
+            className="w-full h-full object-cover" 
+            src={recipe.imageUrl || placeholderImageUrl} 
+            alt={recipe.imageDescription} 
+            onError={(e) => { e.currentTarget.src = placeholderImageUrl; }}
+        />
+      </div>
       <div className="p-6">
         <h3 className="text-2xl font-bold text-gray-800 mb-2">{recipe.recipeName}</h3>
         <p className="text-gray-600 mb-4">{recipe.description}</p>

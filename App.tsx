@@ -1,7 +1,6 @@
-
 import React, { useState, useCallback } from 'react';
 import { Recipe } from './types';
-import { generateRecipes } from './services/geminiService';
+import { generateRecipes, generateImage } from './services/geminiService';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import IngredientInput from './components/IngredientInput';
@@ -14,6 +13,7 @@ const App: React.FC = () => {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingMessage, setLoadingMessage] = useState<string>('');
 
   const handleAddIngredient = (ingredient: string) => {
     if (!ingredients.find(i => i.toLowerCase() === ingredient.toLowerCase())) {
@@ -30,13 +30,29 @@ const App: React.FC = () => {
       setError("Please add some ingredients first.");
       return;
     }
+    setLoadingMessage("Generating delicious recipes...");
     setIsLoading(true);
     setError(null);
     setRecipes([]);
 
     try {
-      const result = await generateRecipes(ingredients);
-      setRecipes(result);
+      const initialRecipes = await generateRecipes(ingredients);
+      
+      setLoadingMessage("Creating beautiful images for your recipes...");
+
+      const recipesWithImages = await Promise.all(
+        initialRecipes.map(async (recipe) => {
+          try {
+            const imageUrl = await generateImage(recipe.imageDescription);
+            return { ...recipe, imageUrl };
+          } catch (imageError) {
+            console.error(`Failed to generate image for ${recipe.recipeName}:`, imageError);
+            return recipe; // Return recipe without image on failure
+          }
+        })
+      );
+      
+      setRecipes(recipesWithImages);
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
@@ -75,7 +91,7 @@ const App: React.FC = () => {
         </div>
 
         <div className="max-w-7xl mx-auto mt-8">
-          {isLoading && <Spinner />}
+          {isLoading && <Spinner message={loadingMessage} />}
           {error && <div className="text-center p-4 bg-red-100 text-red-700 rounded-lg shadow-md">{error}</div>}
           
           {!isLoading && !error && recipes.length === 0 && <WelcomeMessage />}
