@@ -1,33 +1,10 @@
-// FIX: Switched from OpenAI to Google Gemini API for recipe and image generation.
-import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from 'openai';
 import type { Recipe } from '../types';
 
 // This is a server-side file. `process.env` will be available in the Vercel/hosting environment.
-// FIX: Initialized GoogleGenAI with API_KEY from environment variables.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-
-// FIX: Defined responseSchema for Gemini API's JSON mode.
-const recipeSchema = {
-    type: Type.ARRAY,
-    items: {
-        type: Type.OBJECT,
-        properties: {
-            recipeName: { type: Type.STRING, description: "The name of the recipe." },
-            description: { type: Type.STRING, description: "A brief, appetizing description of the dish." },
-            ingredients: { 
-                type: Type.ARRAY, 
-                items: { type: Type.STRING }, 
-                description: "A list of all ingredients required for the recipe." 
-            },
-            instructions: { 
-                type: Type.ARRAY, 
-                items: { type: Type.STRING }, 
-                description: "Step-by-step cooking instructions." 
-            },
-            imageDescription: { type: Type.STRING, description: "A short, descriptive prompt for an image generator to create a picture of the final dish. Example: \"A steaming bowl of chicken noodle soup with fresh parsley.\"" }
-        },
-    }
-};
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export default async function handler(request: Request) {
     if (request.method === 'OPTIONS') {
@@ -61,28 +38,31 @@ export default async function handler(request: Request) {
                 });
             }
 
-            // FIX: Replaced OpenAI prompt with Gemini systemInstruction and contents.
-            const systemInstruction = `You are a world-class chef. Your task is to generate 3 creative and delicious recipes based on a list of ingredients. Prioritize recipes that heavily feature the provided ingredients.`;
-            const contents = `Generate 3 recipes using the following ingredients: ${ingredients.join(", ")}.`;
+            const systemPrompt = `You are a world-class chef. Your task is to generate 3 creative and delicious recipes based on a list of ingredients. Prioritize recipes that heavily feature the provided ingredients.
+            Respond with a JSON object containing a single key "recipes", which is an array of recipe objects. Each recipe object must have the following structure:
+            - recipeName: string
+            - description: string
+            - ingredients: string[]
+            - instructions: string[]
+            - imageDescription: string (A short, descriptive prompt for an image generator to create a picture of the final dish. Example: "A steaming bowl of chicken noodle soup with fresh parsley.")
+            `;
+            const userPrompt = `Generate 3 recipes using the following ingredients: ${ingredients.join(", ")}.`;
 
-            // FIX: Replaced OpenAI call with Gemini's generateContent using the 'gemini-2.5-flash' model.
-            const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash",
-                contents: contents,
-                config: {
-                    systemInstruction: systemInstruction,
-                    responseMimeType: "application/json",
-                    responseSchema: recipeSchema,
-                }
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt },
+                ],
+                response_format: { type: "json_object" },
             });
 
-            const jsonText = response.text;
-            if (!jsonText) {
-                throw new Error("Received an empty response from Gemini.");
+            const content = completion.choices[0].message.content;
+            if (!content) {
+                throw new Error("Received an empty response from OpenAI.");
             }
-            
-            // FIX: Parsing the JSON response from Gemini. The responseSchema ensures the output is a valid Recipe array. This fixes the original type error.
-            const recipes: Recipe[] = JSON.parse(jsonText);
+
+            const { recipes }: { recipes: Recipe[] } = JSON.parse(content);
 
             return new Response(JSON.stringify(recipes), {
                 status: 200,
@@ -98,22 +78,20 @@ export default async function handler(request: Request) {
                 });
             }
 
-            // FIX: Replaced OpenAI image generation with Gemini's generateImages using the 'imagen-4.0-generate-001' model.
-            const imageResponse = await ai.models.generateImages({
-                model: 'imagen-4.0-generate-001',
+            const imageResponse = await openai.images.generate({
+                model: "dall-e-3",
                 prompt: `A vibrant, professional food photograph of ${prompt}, presented beautifully on a clean background.`,
-                config: {
-                    numberOfImages: 1,
-                    outputMimeType: 'image/jpeg',
-                },
+                n: 1,
+                size: "1024x1024",
+                response_format: 'b64_json',
             });
-
-            const base64ImageBytes = imageResponse.generatedImages[0]?.image.imageBytes;
-            if (!base64ImageBytes) {
-                throw new Error("Failed to get base64 image from Gemini.");
-            }
             
-            const imageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
+            const b64_json = imageResponse.data[0]?.b64_json;
+            if (!b64_json) {
+                throw new Error("Failed to get base64 image from OpenAI.");
+            }
+
+            const imageUrl = `data:image/png;base64,${b64_json}`;
 
             return new Response(JSON.stringify({ imageUrl }), {
                 status: 200,
